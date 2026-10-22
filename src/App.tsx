@@ -173,7 +173,7 @@ export function App() {
     const ok = await copyText(value);
     if (!ok) return;
     setCopied(token);
-    window.setTimeout(() => setCopied((current) => (current === token ? null : current)), 1400);
+    window.setTimeout(() => setCopied((current) => (current === token ? null : current)), 4000);
   }
 
   return (
@@ -486,6 +486,7 @@ function PlatformBlock({
                 aria-label={fill(t.copyId, { id: sku.id })}
               >
                 {sku.id}
+                {copied === token ? ` · ${t.copied}` : ""}
               </button>
               <button
                 type="button"
