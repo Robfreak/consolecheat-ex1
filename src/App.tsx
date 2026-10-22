@@ -1,5 +1,5 @@
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
-import { MailIcon, Mark, MoonIcon, SunIcon } from "./icons";
+import { Mark, MoonIcon, SunIcon } from "./icons";
 import { LegalPage } from "./legal";
 import {
   RTL,
@@ -111,8 +111,8 @@ function regionClass(region: Region): string {
 }
 
 function regionText(t: Copy, sku: Sku): string {
-  if (sku.region === "?") return t.unknownRegion;
-  return sku.tag ? `${sku.region} · ${sku.tag}` : sku.region;
+  const label = regionLong(t, sku.region);
+  return sku.tag ? `${label} · ${sku.tag}` : label;
 }
 
 function visibleSkus(hit: SearchHit, filters: Filters): Sku[] {
@@ -211,14 +211,6 @@ export function App() {
             <span className="truncate font-display text-lg font-semibold tracking-tight">{t.brand}</span>
           </a>
           <div className="flex items-center gap-2">
-            <a
-              href="https://consolecheat.com"
-              title={t.mailTitle}
-              className="inline-flex h-11 items-center gap-2 rounded-lg border border-line bg-surface px-3 text-sm font-medium text-fg"
-            >
-              <MailIcon />
-              {t.mail}
-            </a>
             <label className="sr-only" htmlFor="lang">
               {t.language}
             </label>
@@ -326,10 +318,7 @@ export function App() {
                 onChange={setRegion}
                 options={[
                   ["all", t.filterAll],
-                  ...REGION_FILTERS.map((item) => {
-                    const label = item === "Asia" || item === "INT" ? regionLong(t, item) : item;
-                    return [item, label] as const;
-                  }),
+                  ...REGION_FILTERS.map((item) => [item, regionLong(t, item)] as const),
                 ]}
               />
             </div>

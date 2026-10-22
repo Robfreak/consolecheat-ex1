@@ -10,8 +10,8 @@ Expected site: <https://robfreak.github.io/consolecheat-ex1/>
 
 - Search by game name. Typos and partial names work (`god of wr`, `gran turismo`, `the last of us`).
 - Search the other way: paste `CUSA07820`, `PPSA01317`, or a full content ID such as `EP9000-CUSA07410_00-…`.
-- One game can have many IDs. Each row is one ID, labeled with platform (PS4 / PS5) and region (EU, US, JP, Asia, KR, INT). The region filter uses the long name for Asia and INT (in German: Asien, International).
-- Short names work for common games: `gta 5`, `gta v`, `tlou`, `tlou2`, `cod`, `rdr2`, `gow`, `gt7`, and a few more. The base game ranks above VR, DLC, demo, soundtrack, and similar variants.
+- One game can have many IDs. Each row is one ID, labeled with platform (PS4 / PS5) and the region name in the current language (in German: Europa, USA, Japan, Asien, Korea, International). A link with `?q=` opens that search.
+- Short names work for common games: `gta 5`, `gta v`, `tlou`, `tlou2`, `cod`, `cod mw2`, `rdr2`, `gow`, `gt7`, and a few more. The base game ranks above VR, DLC, demo, soundtrack, and unknown-region stubs.
 - Tap an ID to copy it. That is the hand-off for the later PS4 Saves tool.
 
 Region comes from the content-ID territory prefix in the source data (first letter: E Europe, U Americas, J Japan, H Asia, K Korea). A second tag such as UK is shown only when the entitlement label in that same record ends in a known code. IDs whose row has no region stay labeled unknown. No ID in the index was invented.

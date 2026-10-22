@@ -295,7 +295,60 @@ function fuzzyVariants(token: string): string[] {
 }
 
 const SIDE =
-  /\b(?:demo|demos|trial|beta|vr|psvr|dlc|ost|soundtrack|artbook|comic|avatar|theme|themes|upgrade|wallpaper|bonus|bundle)\b|\bart of\b|\bvirtual reality\b|\bmotion comic\b|\boriginal soundtrack\b|\bseason pass\b|\badd on\b/;
+  /\b(?:demo|demos|trial|beta|vr|psvr|dlc|ost|soundtrack|artbook|comic|avatar|theme|themes|upgrade|wallpaper|bonus|bundle|multiplayer)\b|\bart of\b|\bvirtual reality\b|\bmotion comic\b|\boriginal soundtrack\b|\bseason pass\b|\badd on\b/;
+
+const TOKEN_ALIAS: Record<string, string> = {
+  cod: "call of duty",
+  mw: "modern warfare",
+  mw2: "modern warfare 2",
+  mwii: "modern warfare 2",
+  mw3: "modern warfare 3",
+  mwiii: "modern warfare 3",
+  bo2: "black ops 2",
+  bo3: "black ops 3",
+  bo4: "black ops 4",
+  bo6: "black ops 6",
+  gow: "god of war",
+  gowr: "god of war ragnarok",
+  tlou: "the last of us",
+  tlou1: "the last of us part 1",
+  tlou2: "the last of us part 2",
+  gta: "grand theft auto",
+  rdr: "red dead redemption",
+  rdr2: "red dead redemption 2",
+  gt7: "gran turismo 7",
+  hzd: "horizon zero dawn",
+  hfw: "horizon forbidden west",
+  nfs: "need for speed",
+  ff7: "final fantasy 7",
+  ff7r: "final fantasy 7 remake",
+  p5: "persona 5",
+  p5r: "persona 5 royal",
+  mhw: "monster hunter world",
+  nms: "no mans sky",
+  uc4: "uncharted 4",
+  sm2: "spider man 2",
+  cp2077: "cyberpunk 2077",
+  tw3: "the witcher 3",
+  mgs5: "metal gear solid 5",
+  mgsv: "metal gear solid 5",
+  re4: "resident evil 4",
+};
+
+function expandQuery(queryNorm: string): string | null {
+  const parts = queryNorm.split(" ").filter(Boolean);
+  let changed = false;
+  const out: string[] = [];
+  for (const part of parts) {
+    if (Object.hasOwn(TOKEN_ALIAS, part)) {
+      changed = true;
+      out.push(TOKEN_ALIAS[part]);
+    } else out.push(part);
+  }
+  if (!changed) return null;
+  const expanded = out.join(" ");
+  return expanded === queryNorm ? null : expanded;
+}
 
 const EXTRA: Record<string, readonly string[]> = {
   "grand theft auto v": ["gta 5", "gta v", "gta5", "gtav"],
@@ -345,6 +398,14 @@ function sidePenalty(name: string, queryNorm: string): number {
   const normalized = normalize(name);
   if (!SIDE.test(normalized) || SIDE.test(queryNorm)) return 0;
   return 380;
+}
+
+function regionPenalty(game: Game): number {
+  const known = new Set<Region>();
+  for (const sku of game.skus) if (sku.region !== "?") known.add(sku.region);
+  if (known.size === 0) return 420;
+  if (known.size === 1) return 140;
+  return 0;
 }
 
 type Prepared = {
@@ -566,6 +627,9 @@ function scoreForm(
         if (nameToken[0] !== queryToken[0] && editDistance(nameToken, queryToken) > 1) continue;
         const distance = editDistance(nameToken, queryToken);
         if (distance <= 1) {
+          const shorter = nameToken.length < queryToken.length ? nameToken : queryToken;
+          const longer = nameToken.length < queryToken.length ? queryToken : nameToken;
+          if (longer.startsWith(shorter) && longer.length - shorter.length === 1 && shorter.length <= 3) continue;
           kind = "fuzzy";
           used.add(i);
           break;
@@ -596,76 +660,93 @@ export function searchIndex(index: Index, raw: string, filters: Filters): Search
   }
 
   const queryNorm = normalize(query);
-  const queryTokens = tokensOf(queryNorm);
-  const queryFlat = queryNorm.replace(/ /g, "");
-  if (!queryFlat) return [];
+  const expanded = expandQuery(queryNorm);
+  const variants = expanded ? [queryNorm, expanded] : [queryNorm];
+  const bestByGame = new Map<number, { score: number; miss: number; queryNorm: string }>();
 
-  const candidateScore = new Map<number, number>();
-  const tokenMaps = queryTokens.map((token) => gamesForToken(index, token));
-  if (tokenMaps.length) {
-    let inter: Set<number> | null = null;
-    for (const map of tokenMaps) {
-      const keys = new Set<number>(map.keys());
-      if (!inter) {
-        inter = keys;
-      } else {
-        const next = new Set<number>();
-        for (const gi of inter) if (keys.has(gi)) next.add(gi);
-        inter = next;
-      }
-      if (inter.size === 0) break;
-    }
-    if (inter && inter.size) {
-      for (const gi of inter) candidateScore.set(gi, 50);
-    } else {
+  for (const variant of variants) {
+    const queryTokens = tokensOf(variant);
+    const queryFlat = variant.replace(/ /g, "");
+    if (!queryFlat) continue;
+
+    const candidateScore = new Map<number, number>();
+    const tokenMaps = queryTokens.map((token) => gamesForToken(index, token));
+    if (tokenMaps.length) {
+      let inter: Set<number> | null = null;
       for (const map of tokenMaps) {
-        for (const gi of map.keys()) candidateScore.set(gi, (candidateScore.get(gi) ?? 0) + 1);
+        const keys = new Set<number>(map.keys());
+        if (!inter) {
+          inter = keys;
+        } else {
+          const next = new Set<number>();
+          for (const gi of inter) if (keys.has(gi)) next.add(gi);
+          inter = next;
+        }
+        if (inter.size === 0) break;
+      }
+      if (inter && inter.size) {
+        for (const gi of inter) candidateScore.set(gi, 50);
+      } else {
+        for (const map of tokenMaps) {
+          for (const gi of map.keys()) candidateScore.set(gi, (candidateScore.get(gi) ?? 0) + 1);
+        }
+      }
+    }
+
+    if (queryFlat.length >= 3) {
+      const grams = gramsOf(queryFlat);
+      const counts = new Map<number, number>();
+      for (const gram of grams) {
+        const list = index.grams.get(gram);
+        if (!list) continue;
+        for (const gi of list) counts.set(gi, (counts.get(gi) ?? 0) + 1);
+      }
+      const minShare = Math.max(2, Math.ceil(grams.length * 0.45));
+      for (const [gi, count] of counts) {
+        if (count >= minShare) candidateScore.set(gi, (candidateScore.get(gi) ?? 0) + count);
+      }
+    }
+
+    const rankedCandidates = [...candidateScore.entries()].sort((a, b) => b[1] - a[1]).slice(0, 400);
+    for (const [gi] of rankedCandidates) {
+      const prepared = index.prepared[gi];
+      if (!prepared.game.skus.some((sku) => skuVisible(sku, filters))) continue;
+      let best = -Infinity;
+      let miss = queryTokens.length || 1;
+      for (const form of prepared.forms) {
+        const result = scoreForm(form, variant, queryFlat, queryTokens);
+        if (result.score > best || (result.score === best && result.miss < miss)) {
+          best = result.score;
+          miss = result.miss;
+        }
+      }
+      if (best < 160) continue;
+      const prev = bestByGame.get(gi);
+      if (!prev || best > prev.score || (best === prev.score && miss < prev.miss)) {
+        bestByGame.set(gi, { score: best, miss, queryNorm: variant });
       }
     }
   }
 
-  if (queryFlat.length >= 3) {
-    const grams = gramsOf(queryFlat);
-    const counts = new Map<number, number>();
-    for (const gram of grams) {
-      const list = index.grams.get(gram);
-      if (!list) continue;
-      for (const gi of list) counts.set(gi, (counts.get(gi) ?? 0) + 1);
-    }
-    const minShare = Math.max(2, Math.ceil(grams.length * 0.45));
-    for (const [gi, count] of counts) {
-      if (count >= minShare) candidateScore.set(gi, (candidateScore.get(gi) ?? 0) + count);
-    }
-  }
-
-  const rankedCandidates = [...candidateScore.entries()].sort((a, b) => b[1] - a[1]).slice(0, 400);
   const scored: { hit: SearchHit; miss: number }[] = [];
-  for (const [gi] of rankedCandidates) {
+  for (const [gi, best] of bestByGame) {
     const prepared = index.prepared[gi];
-    if (!prepared.game.skus.some((sku) => skuVisible(sku, filters))) continue;
-    let best = -Infinity;
-    let miss = queryTokens.length || 1;
-    for (const form of prepared.forms) {
-      const result = scoreForm(form, queryNorm, queryFlat, queryTokens);
-      if (result.score > best) {
-        best = result.score;
-        miss = result.miss;
-      }
-    }
-    if (best < 160) continue;
     scored.push({
       hit: {
         game: prepared.game,
-        score: best - sidePenalty(prepared.game.name, queryNorm),
+        score: best.score - sidePenalty(prepared.game.name, best.queryNorm) - regionPenalty(prepared.game),
         matched: [],
         viaId: false,
       },
-      miss,
+      miss: best.miss,
     });
   }
 
   const clean = scored.filter((item) => item.miss === 0);
   const pool = clean.length ? clean : scored.filter((item) => item.miss <= 1);
   pool.sort((a, b) => b.hit.score - a.hit.score || a.hit.game.name.localeCompare(b.hit.game.name));
-  return pool.slice(0, 20).map((item) => item.hit);
+  const top = pool[0]?.hit.score ?? 0;
+  const floor = top >= 1000 ? Math.max(450, top - 800) : 0;
+  const visible = floor ? pool.filter((item) => item.hit.score >= floor) : pool;
+  return visible.slice(0, 20).map((item) => item.hit);
 }

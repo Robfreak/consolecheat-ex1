@@ -95,8 +95,7 @@ test("common aliases hit the main game", () => {
   assert.equal(names("rdr2")[0], "Red Dead Redemption 2");
   assert.equal(names("rdr 2")[0], "Red Dead Redemption 2");
   assert.equal(names("tlou2")[0], "The Last of Us Part II");
-  assert.match(names("tlou")[0], /^The Last of Us(?! American| Left)/);
-  assert.doesNotMatch(names("tlou")[0], /Art|Soundtrack|Comic/i);
+  assert.equal(names("tlou")[0], "The Last of Us Part I");
   const cod = names("cod")[0];
   assert.match(cod, /^Call of Duty/);
   assert.doesNotMatch(cod, /DEMO|Beta|Trial/i);
@@ -106,6 +105,22 @@ test("common aliases hit the main game", () => {
   assert.equal(names("nfs")[0], "Need for Speed");
   const blood = searchIndex(index, "CUSA00208", all)[0];
   assert.equal(blood.game.skus.find((sku) => sku.id === "CUSA00208")?.tag, "UK");
+});
+
+test("short aliases prefer the main game over unknown stubs and fuzzy noise", () => {
+  const tlou = searchIndex(index, "tlou", all);
+  assert.notEqual(tlou[0]?.game.name, "The Last of Us Complete");
+  assert.ok(tlou[0]?.game.skus.some((sku) => sku.region !== "?"));
+  const cod = searchIndex(index, "cod", all);
+  const codRegions = new Set(cod[0]?.game.skus.map((sku) => sku.region).filter((region) => region !== "?"));
+  assert.ok(codRegions.size >= 2, cod[0]?.game.name);
+  const mw = names("cod mw2");
+  assert.ok(mw.length > 0, "cod mw2 returned nothing");
+  assert.match(mw[0], /modern warfare (2|ii)/i);
+  const gow = names("gow", 12);
+  assert.equal(gow[0], "God of War");
+  assert.ok(!gow.some((name) => name === "HBO GO" || name === "Sky Go" || name === "Go To Work"), gow.join(" | "));
+  assert.equal(names("uncharted 4")[0], "Uncharted 4: A Thief's End");
 });
 
 test("titles.json stays compact", () => {

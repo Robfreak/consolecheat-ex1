@@ -129,6 +129,18 @@ function Datenschutz() {
           </a>
           .
         </p>
+        <p>
+          Rechtsgrundlage für diese Verbindungsdaten ist Art. 6 Abs. 1 lit. f DSGVO. Das berechtigte Interesse ist der
+          technische Betrieb und die Absicherung des Hostings. Verarbeitet werden sie vom Host, nicht von diesem
+          Projekt.
+        </p>
+        <h2 className="mt-2 font-display text-2xl font-semibold tracking-tight text-fg">Ihre Rechte</h2>
+        <p>
+          Sie haben das Recht auf Auskunft, Berichtigung, Löschung und Einschränkung der Verarbeitung, das Recht auf
+          Widerspruch sowie das Recht auf Beschwerde bei einer Aufsichtsbehörde. Solange im Impressum nur Platzhalter
+          stehen, ist hier keine verantwortliche Stelle benannt. Anfragen zu den Hosting-Protokollen gehen an den Host.
+          Eine Beschwerde richtet sich an die zuständige Aufsichtsbehörde.
+        </p>
         <h2 className="mt-2 font-display text-2xl font-semibold tracking-tight text-fg">Title-Liste</h2>
         <p>
           Die Title-IDs stammen aus der MIT-Liste andshrew/PlayStation-Titles. Der Browser lädt die aufbereitete Datei
@@ -170,6 +182,17 @@ function Datenschutz() {
             GitHub Privacy Statement
           </a>
           .
+        </p>
+        <p>
+          The legal basis for those connection logs is Article 6 (1) (f) GDPR (Art. 6 Abs. 1 lit. f DSGVO): legitimate
+          interest in running and securing the hosting. The host processes them, not this project.
+        </p>
+        <h2 className="mt-2 font-display text-2xl font-semibold tracking-tight text-fg">Your rights</h2>
+        <p>
+          You have the right of access, rectification, erasure, and restriction of processing, the right to object, and
+          the right to lodge a complaint with a supervisory authority. While the Impressum only has placeholders, no
+          controller is named here. Requests about the hosting logs go to the host. A complaint goes to the competent
+          supervisory authority.
         </p>
         <h2 className="mt-2 font-display text-2xl font-semibold tracking-tight text-fg">Title list</h2>
         <p>The title IDs come from the MIT-licensed andshrew/PlayStation-Titles list. The browser loads the prepared file from this website, not from a separate search service.</p>
