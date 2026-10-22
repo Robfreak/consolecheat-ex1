@@ -15,6 +15,12 @@ function names(query: string, limit = 8): string[] {
     .map((hit) => hit.game.name);
 }
 
+const MW2_TOP3 = [
+  "Call of Duty: Modern Warfare 2 Campaign Remastered",
+  "Call of Duty: Modern Warfare II",
+  "Call of Duty Modern Warfare 2",
+];
+
 test("typo and partial: god of wr finds God of War first, with every region", () => {
   const hits = searchIndex(index, "god of wr", all);
   assert.equal(hits[0]?.game.name, "God of War");
@@ -114,9 +120,7 @@ test("short aliases prefer the main game over unknown stubs and fuzzy noise", ()
   const cod = searchIndex(index, "cod", all);
   const codRegions = new Set(cod[0]?.game.skus.map((sku) => sku.region).filter((region) => region !== "?"));
   assert.ok(codRegions.size >= 2, cod[0]?.game.name);
-  const mw = names("cod mw2");
-  assert.ok(mw.length > 0, "cod mw2 returned nothing");
-  assert.match(mw[0], /modern warfare (2|ii)/i);
+  assert.deepEqual(names("cod mw2", 3), MW2_TOP3, names("cod mw2", 6).join(" | "));
   const gow = names("gow", 12);
   assert.equal(gow[0], "God of War");
   assert.ok(!gow.some((name) => name === "HBO GO" || name === "Sky Go" || name === "Go To Work"), gow.join(" | "));
@@ -124,17 +128,29 @@ test("short aliases prefer the main game over unknown stubs and fuzzy noise", ()
 });
 
 test("mw2 ranks the known releases above the odd digit-titled record", () => {
-  const found = names("mw2", 12);
-  const odd = found.findIndex((name) => name === "Call of Duty Modern Warfare 2");
-  const remaster = found.findIndex((name) => /modern warfare 2 campaign remastered/i.test(name));
-  const mwii = found.findIndex((name) => /^Call of Duty: Modern Warfare II$/.test(name));
-  assert.ok(odd >= 0 && remaster >= 0 && mwii >= 0, found.join(" | "));
-  assert.ok(remaster < odd, found.join(" | "));
-  assert.ok(mwii < odd, found.join(" | "));
-  assert.match(names("cod mw2")[0], /modern warfare (2|ii)/i);
+  assert.deepEqual(names("mw2", 3), MW2_TOP3, names("mw2", 6).join(" | "));
+  assert.deepEqual(names("cod mw2", 3), MW2_TOP3, names("cod mw2", 6).join(" | "));
+  assert.deepEqual(names("modern warfare ii", 3), MW2_TOP3, names("modern warfare ii", 6).join(" | "));
   assert.equal(names("gow")[0], "God of War");
   assert.equal(names("tlou")[0], "The Last of Us Part I");
   assert.equal(names("uncharted 4")[0], "Uncharted 4: A Thief's End");
+});
+
+test("final fantasy x leads with the X/X-2 HD remaster", () => {
+  const found = names("final fantasy x", 8);
+  assert.equal(found[0], "FINAL FANTASY X/X-2 HD Remaster", found.join(" | "));
+});
+
+test("a folded roman numeral does not fuzzy-match a different word", () => {
+  const found = names("rocky iv", 12);
+  assert.ok(!found.some((name) => /rock band 4/i.test(name)), found.join(" | ") || "(none)");
+});
+
+test("kept queries still resolve", () => {
+  assert.equal(names("i am")[0], "I Am Dead");
+  assert.equal(names("gta v")[0], "Grand Theft Auto V");
+  assert.equal(names("civilization vi")[0], "Sid Meier's Civilization VI");
+  assert.equal(names("fifa")[0], "FIFA 23");
 });
 
 test("a numbered series lists the newest entry first", () => {
