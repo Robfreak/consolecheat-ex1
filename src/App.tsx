@@ -468,32 +468,28 @@ function PlatformBlock({
         {skus.map((sku) => {
           const token = sku.id;
           const on = matched.has(sku.id);
+          const done = copied === token;
           return (
-            <li
-              key={sku.id}
-              className={
-                "flex flex-wrap items-center gap-2 rounded-lg bg-raised px-3 py-2 " +
-                (on ? "ring-2 ring-accent" : "")
-              }
-            >
-              <span className={regionClass(sku.region)} title={sku.region === "?" ? t.unknownHint : regionLong(t, sku.region)}>
-                {regionText(t, sku)}
-              </span>
+            <li key={sku.id}>
               <button
                 type="button"
                 onClick={() => onCopy(sku.id, token)}
-                className="min-h-11 px-1 font-mono text-base font-semibold tracking-wide text-fg"
                 aria-label={fill(t.copyId, { id: sku.id })}
+                className={
+                  "flex w-full flex-wrap items-center gap-2 rounded-lg bg-raised px-3 py-2 text-left " +
+                  (on ? "ring-2 ring-accent" : "")
+                }
               >
-                {sku.id}
-                {copied === token ? ` · ${t.copied}` : ""}
-              </button>
-              <button
-                type="button"
-                onClick={() => onCopy(sku.id, token)}
-                className="ms-auto inline-flex h-11 items-center rounded-lg border border-line bg-surface px-3 text-sm font-medium text-fg"
-              >
-                {copied === token ? t.copied : t.copy}
+                <span className={regionClass(sku.region)} title={sku.region === "?" ? t.unknownHint : regionLong(t, sku.region)}>
+                  {regionText(t, sku)}
+                </span>
+                <span className="min-h-11 px-1 font-mono text-base font-semibold tracking-wide text-fg">
+                  {sku.id}
+                  {done ? ` · ${t.copied}` : ""}
+                </span>
+                <span className="ms-auto inline-flex h-11 items-center rounded-lg border border-line bg-surface px-3 text-sm font-medium text-fg">
+                  {done ? t.copied : t.copy}
+                </span>
               </button>
             </li>
           );
