@@ -26,3 +26,7 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## Fonts
+
+Outfit (copyright 2021 The Outfit Project Authors) and Source Sans 3 (copyright Google Inc.) are bundled from the `@fontsource` packages. Both are under the SIL Open Font License 1.1. The license text shipped with the site is `public/FONT-OFL.txt`.

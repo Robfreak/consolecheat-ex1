@@ -8,6 +8,8 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { gzipSync } from "node:zlib";
+import { assertRoundTrip, encodeCatalog } from "./catalog-format.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const cacheDir = resolve(root, "data/cache");
@@ -33,6 +35,35 @@ const REGION_ORDER = { EU: 0, US: 1, JP: 2, Asia: 3, KR: 4, INT: 5, "?": 6 };
 
 mkdirSync(cacheDir, { recursive: true });
 mkdirSync(resolve(root, "public"), { recursive: true });
+
+if (process.argv.includes("--repack")) {
+  const old = JSON.parse(readFileSync(outPath, "utf8"));
+  if (!Array.isArray(old.titles)) {
+    console.error("titles.json is not the tuple catalog; nothing to repack.");
+    process.exit(old.format === 2 ? 0 : 1);
+  }
+  const games = old.titles.map(([name, aliases, skus]) => ({
+    name,
+    aliases: aliases ?? [],
+    skus: skus.map(([id, region, platform, tag]) => ({
+      id,
+      region,
+      platform,
+      tag: tag || "",
+    })),
+  }));
+  const payload = encodeCatalog(games, {
+    source: old.source,
+    commit: old.commit,
+    license: old.license,
+    generated: old.generated,
+  });
+  assertRoundTrip(games, payload);
+  const body = JSON.stringify(payload);
+  writeFileSync(outPath, body);
+  console.log(`Repacked ${outPath} bytes=${Buffer.byteLength(body)} gzip=${gzipSync(body).length}`);
+  process.exit(0);
+}
 
 function download() {
   execFileSync(
@@ -345,26 +376,16 @@ if (games.length < 8000 || seenIds.size < 30000) {
 
 if (failed) process.exit(1);
 
-const compactGames = games.map((game) => {
-  const skus = game.skus.map((sku) => {
-    if (sku.tag) return [sku.id, sku.region, sku.platform, sku.tag];
-    return [sku.id, sku.region, sku.platform];
-  });
-  return [game.name, game.aliases.length ? game.aliases : null, skus];
-});
-
-const payload = {
+const payload = encodeCatalog(games, {
   source: repoUrl,
   commit,
   license: "MIT",
   generated: new Date().toISOString().slice(0, 10),
-  games: games.length,
-  ids: seenIds.size,
-  titles: compactGames,
-};
-
-writeFileSync(outPath, JSON.stringify(payload));
-const bytes = Buffer.byteLength(JSON.stringify(payload));
+});
+assertRoundTrip(games, payload);
+const body = JSON.stringify(payload);
+writeFileSync(outPath, body);
+const bytes = Buffer.byteLength(body);
 console.log(
-  `Wrote ${outPath} games=${games.length} ids=${seenIds.size} rows=${rows} skipped=${skipped} bytes=${bytes} commit=${commit.slice(0, 12)}`,
+  `Wrote ${outPath} games=${games.length} ids=${seenIds.size} rows=${rows} skipped=${skipped} bytes=${bytes} gzip=${gzipSync(body).length} commit=${commit.slice(0, 12)}`,
 );

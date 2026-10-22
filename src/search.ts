@@ -15,17 +15,37 @@ export type Game = {
 };
 
 export type TitlesFile = {
+  format: number;
   source: string;
   commit: string;
   license: string;
   generated: string;
   games: number;
   ids: number;
-  titles: CompactGame[];
+  names: string;
+  aliases?: Record<string, string[]>;
+  skus: string;
 };
 
-type CompactSku = [string, string, string, string?];
-type CompactGame = [string, string[] | null, CompactSku[]];
+const REGION_FROM: Record<string, Region> = {
+  E: "EU",
+  U: "US",
+  J: "JP",
+  H: "Asia",
+  K: "KR",
+  I: "INT",
+  "?": "?",
+};
+
+const REGION_SORT: Record<Region, number> = {
+  EU: 0,
+  US: 1,
+  JP: 2,
+  Asia: 3,
+  KR: 4,
+  INT: 5,
+  "?": 6,
+};
 
 export type SearchHit = {
   game: Game;
@@ -38,8 +58,6 @@ export type Filters = {
   platform: "all" | Platform;
   region: "all" | Region;
 };
-
-const REGIONS = new Set<Region>(["EU", "US", "JP", "Asia", "KR", "INT", "?"]);
 
 const STOP = new Set([
   "the",
@@ -91,17 +109,65 @@ const ROMAN: Record<string, string> = {
 
 const ALPHA = "abcdefghijklmnopqrstuvwxyz0123456789";
 
+function decodeNameList(text: string): string[] {
+  if (!text) return [];
+  const names: string[] = [];
+  let prev = "";
+  for (const line of text.split("\n")) {
+    const tab = line.indexOf("\t");
+    if (tab < 0) continue;
+    const keep = Number(line.slice(0, tab));
+    const name = prev.slice(0, keep) + line.slice(tab + 1);
+    names.push(name);
+    prev = name;
+  }
+  return names;
+}
+
 export function decodeTitles(file: TitlesFile): Game[] {
-  return file.titles.map(([name, aliases, skus]) => ({
-    name,
-    aliases: aliases ?? [],
-    skus: skus.map(([id, region, platform, tag]) => ({
-      id,
-      region: REGIONS.has(region as Region) ? (region as Region) : "?",
-      platform: platform === "5" ? "PS5" : "PS4",
+  const names = decodeNameList(file.names);
+  const grouped: Sku[][] = Array.from({ length: names.length }, () => []);
+  let prefix = "";
+  let num = 0;
+  for (const line of file.skus ? file.skus.split("\n") : []) {
+    if (!line) continue;
+    let i = 0;
+    if (line[0] === "C" || line[0] === "P") {
+      prefix = line[0];
+      num = Number(line.slice(1, 6));
+      i = 6;
+    } else {
+      let j = 0;
+      while (j < line.length && line.charCodeAt(j) >= 48 && line.charCodeAt(j) <= 57) j++;
+      num += Number(line.slice(0, j));
+      i = j;
+    }
+    const region = REGION_FROM[line[i]] ?? "?";
+    const platform: Platform = line[i + 1] === "5" ? "PS5" : "PS4";
+    const at = line.indexOf("@", i + 2);
+    const tag = at >= 0 ? line.slice(i + 2, at) : "";
+    const gi = Number(line.slice(at + 1));
+    if (!grouped[gi]) continue;
+    grouped[gi].push({
+      id: `${prefix === "P" ? "PPSA" : "CUSA"}${String(num).padStart(5, "0")}`,
+      region,
+      platform,
       tag: tag || undefined,
-    })),
-  }));
+    });
+  }
+  return names.map((name, gi) => {
+    const skus = grouped[gi] ?? [];
+    skus.sort((a, b) => {
+      if (a.platform !== b.platform) return a.platform < b.platform ? -1 : 1;
+      const regionDelta = (REGION_SORT[a.region] ?? 9) - (REGION_SORT[b.region] ?? 9);
+      if (regionDelta) return regionDelta;
+      const aTag = a.tag ?? "";
+      const bTag = b.tag ?? "";
+      if (aTag !== bTag) return aTag < bTag ? -1 : 1;
+      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+    });
+    return { name, aliases: file.aliases?.[String(gi)] ?? [], skus };
+  });
 }
 
 export function normalize(input: string): string {
@@ -228,6 +294,59 @@ function fuzzyVariants(token: string): string[] {
   return list;
 }
 
+const SIDE =
+  /\b(?:demo|demos|trial|beta|vr|psvr|dlc|ost|soundtrack|artbook|comic|avatar|theme|themes|upgrade|wallpaper|bonus|bundle)\b|\bart of\b|\bvirtual reality\b|\bmotion comic\b|\boriginal soundtrack\b|\bseason pass\b|\badd on\b/;
+
+const EXTRA: Record<string, readonly string[]> = {
+  "grand theft auto v": ["gta 5", "gta v", "gta5", "gtav"],
+  "grand theft auto vi": ["gta 6", "gta vi", "gta6"],
+  "red dead redemption": ["rdr"],
+  "red dead redemption 2": ["rdr2", "rdr 2"],
+  "the last of us part i": ["tlou", "tlou1", "tlou 1"],
+  "the last of us part ii": ["tlou", "tlou2", "tlou 2"],
+  "the last of us remastered": ["tlou"],
+  "the last of us complete": ["tlou"],
+  "the last of us part ii remastered": ["tlou2", "tlou 2"],
+  "god of war": ["gow"],
+  "god of war ragnarok": ["gowr", "gow ragnarok"],
+  "gran turismo 7": ["gt7", "gt 7"],
+  "horizon zero dawn": ["hzd"],
+  "horizon zero dawn remastered": ["hzd"],
+  "horizon zero dawn complete edition": ["hzd"],
+  "horizon forbidden west": ["hfw"],
+  "monster hunter world": ["mhw"],
+  "the witcher 3 wild hunt": ["tw3", "witcher 3"],
+  "cyberpunk 2077": ["cp2077"],
+  "no mans sky": ["nms"],
+  "final fantasy vii": ["ff7", "ff 7"],
+  "final fantasy vii remake": ["ff7", "ff7r"],
+  "final fantasy vii rebirth": ["ff7"],
+  "persona 5": ["p5"],
+  "persona 5 royal": ["p5r"],
+  "metal gear solid v the phantom pain": ["mgs5", "mgsv"],
+  "resident evil 4": ["re4", "re 4"],
+  "marvels spider man": ["spiderman", "spider man"],
+  "marvels spider man 2": ["spiderman 2", "sm2"],
+  "uncharted 4 a thiefs end": ["uc4"],
+};
+
+function extraFor(name: string): string[] {
+  const norm = normalize(name);
+  const out: string[] = [];
+  if (Object.hasOwn(EXTRA, norm)) out.push(...EXTRA[norm]);
+  if (!SIDE.test(norm)) {
+    if (norm === "call of duty" || norm.startsWith("call of duty ")) out.push("cod");
+    if (norm === "need for speed" || norm.startsWith("need for speed ")) out.push("nfs");
+  }
+  return out;
+}
+
+function sidePenalty(name: string, queryNorm: string): number {
+  const normalized = normalize(name);
+  if (!SIDE.test(normalized) || SIDE.test(queryNorm)) return 0;
+  return 380;
+}
+
 type Prepared = {
   game: Game;
   forms: { norm: string; flat: string; tokens: string[] }[];
@@ -258,7 +377,7 @@ export function buildIndex(games: Game[]): Index {
   };
 
   games.forEach((game, gi) => {
-    const texts = [game.name, ...game.aliases];
+    const texts = [game.name, ...game.aliases, ...extraFor(game.name)];
     const forms: Prepared["forms"] = [];
     const seenTokens = new Set<string>();
     const seenGrams = new Set<string>();
@@ -411,6 +530,26 @@ function scoreForm(
     if (kind === "miss") {
       for (let i = 0; i < form.tokens.length; i++) {
         if (used.has(i)) continue;
+        let joined = "";
+        const taken: number[] = [];
+        for (let j = i; j < form.tokens.length; j++) {
+          if (used.has(j)) break;
+          const next = joined + form.tokens[j];
+          if (!queryToken.startsWith(next)) break;
+          joined = next;
+          taken.push(j);
+          if (joined === queryToken && taken.length > 1) {
+            kind = "exact";
+            for (const index of taken) used.add(index);
+            break;
+          }
+        }
+        if (kind === "exact") break;
+      }
+    }
+    if (kind === "miss") {
+      for (let i = 0; i < form.tokens.length; i++) {
+        if (used.has(i)) continue;
         const nameToken = form.tokens[i];
         if (queryToken.length >= 2 && nameToken.startsWith(queryToken)) {
           kind = "prefix";
@@ -515,7 +654,12 @@ export function searchIndex(index: Index, raw: string, filters: Filters): Search
     }
     if (best < 160) continue;
     scored.push({
-      hit: { game: prepared.game, score: best, matched: [], viaId: false },
+      hit: {
+        game: prepared.game,
+        score: best - sidePenalty(prepared.game.name, queryNorm),
+        matched: [],
+        viaId: false,
+      },
       miss,
     });
   }
