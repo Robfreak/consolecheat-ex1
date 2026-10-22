@@ -107,6 +107,13 @@ const ROMAN: Record<string, string> = {
   xii: "12",
 };
 
+// Longer numerals first so "viii" does not become "8ii". i, v, and x stay words (GTA V, FF X).
+const ROMAN_WORD = /\b(?:xii|xi|viii|vii|vi|ix|iv|iii|ii)\b/g;
+
+function foldRoman(norm: string): string {
+  return norm.replace(ROMAN_WORD, (roman) => ROMAN[roman]);
+}
+
 const ALPHA = "abcdefghijklmnopqrstuvwxyz0123456789";
 
 function decodeNameList(text: string): string[] {
@@ -563,15 +570,18 @@ function gamesForToken(index: Index, token: string): Map<number, Kind> {
 function scoreForm(
   form: { norm: string; flat: string; tokens: string[] },
   queryNorm: string,
-  queryFlat: string,
   queryTokens: string[],
 ): { score: number; miss: number } {
+  const nameNorm = foldRoman(form.norm);
+  const nameFlat = nameNorm.replace(/ /g, "");
+  const foldedQuery = foldRoman(queryNorm);
+  const foldedFlat = foldedQuery.replace(/ /g, "");
   let score = 0;
-  if (form.norm === queryNorm) score += 1000;
-  else if (form.norm.startsWith(queryNorm)) score += 720;
-  else if (form.flat === queryFlat) score += 700;
-  else if (queryFlat.length >= 4 && form.flat.startsWith(queryFlat)) score += 560;
-  else if (queryFlat.length >= 4 && form.flat.includes(queryFlat)) score += 420;
+  if (nameNorm === foldedQuery) score += 1000;
+  else if (nameNorm.startsWith(foldedQuery)) score += 720;
+  else if (nameFlat === foldedFlat) score += 700;
+  else if (foldedFlat.length >= 4 && nameFlat.startsWith(foldedFlat)) score += 560;
+  else if (foldedFlat.length >= 4 && nameFlat.includes(foldedFlat)) score += 420;
 
   let exact = 0;
   let prefix = 0;
@@ -646,8 +656,55 @@ function scoreForm(
   score -= miss * 90;
   if (queryTokens.length > 0 && miss === 0) score += 100;
   score -= Math.max(0, form.tokens.length - queryTokens.length) * 16;
-  if (queryFlat.length >= 3 && form.flat.length >= 3) score += Math.round(dice(queryFlat, form.flat) * 100);
+  if (foldedFlat.length >= 3 && nameFlat.length >= 3) score += Math.round(dice(foldedFlat, nameFlat) * 100);
   return { score, miss };
+}
+
+const PREFIX_WINDOW = 180;
+const PREFIX_PENALTY = 120;
+
+function preferCompleteDuplicates(pool: { hit: SearchHit }[]): void {
+  const folded = pool.map((item) => foldRoman(normalize(item.hit.game.name)));
+  const groups = new Map<string, number[]>();
+  for (let i = 0; i < folded.length; i++) {
+    const list = groups.get(folded[i]);
+    if (list) list.push(i);
+    else groups.set(folded[i], [i]);
+  }
+  // Only rows that collapse to the same title (Modern Warfare 2 / II) compete
+  // on how many IDs they carry, and only those short duplicates yield to a
+  // longer edition that is already within a small score window.
+  const duplicate = new Set<number>();
+  for (const indexes of groups.values()) {
+    if (indexes.length < 2) continue;
+    for (const i of indexes) {
+      duplicate.add(i);
+      pool[i].hit.score += Math.min(pool[i].hit.game.skus.length, 20) * 4;
+    }
+  }
+  for (const i of duplicate) {
+    if (folded[i].length < 8) continue;
+    for (let j = 0; j < pool.length; j++) {
+      if (i === j || !folded[j].startsWith(`${folded[i]} `)) continue;
+      const gap = pool[i].hit.score - pool[j].hit.score;
+      if (gap >= 0 && gap <= PREFIX_WINDOW) {
+        pool[i].hit.score -= PREFIX_PENALTY;
+        break;
+      }
+    }
+  }
+}
+
+// "fifa" ties FIFA 14 and FIFA 23; the trailing number is the only difference.
+function seriesNumber(name: string, queryNorm: string): number | null {
+  const tokens = tokensOf(foldRoman(normalize(name)));
+  if (tokens.length < 2) return null;
+  const last = tokens[tokens.length - 1];
+  if (!/^\d{1,4}$/.test(last)) return null;
+  const queryTokens = tokensOf(foldRoman(queryNorm));
+  if (queryTokens.length === 0 || /^\d{1,4}$/.test(queryTokens[queryTokens.length - 1])) return null;
+  if (queryTokens.join(" ") !== tokens.slice(0, -1).join(" ")) return null;
+  return Number(last);
 }
 
 export function searchIndex(index: Index, raw: string, filters: Filters): SearchHit[] {
@@ -714,7 +771,7 @@ export function searchIndex(index: Index, raw: string, filters: Filters): Search
       let best = -Infinity;
       let miss = queryTokens.length || 1;
       for (const form of prepared.forms) {
-        const result = scoreForm(form, variant, queryFlat, queryTokens);
+        const result = scoreForm(form, variant, queryTokens);
         if (result.score > best || (result.score === best && result.miss < miss)) {
           best = result.score;
           miss = result.miss;
@@ -744,7 +801,14 @@ export function searchIndex(index: Index, raw: string, filters: Filters): Search
 
   const clean = scored.filter((item) => item.miss === 0);
   const pool = clean.length ? clean : scored.filter((item) => item.miss <= 1);
-  pool.sort((a, b) => b.hit.score - a.hit.score || a.hit.game.name.localeCompare(b.hit.game.name));
+  preferCompleteDuplicates(pool);
+  pool.sort((a, b) => {
+    if (b.hit.score !== a.hit.score) return b.hit.score - a.hit.score;
+    const aNumber = seriesNumber(a.hit.game.name, queryNorm);
+    const bNumber = seriesNumber(b.hit.game.name, queryNorm);
+    if (aNumber !== null && bNumber !== null && aNumber !== bNumber) return bNumber - aNumber;
+    return a.hit.game.name.localeCompare(b.hit.game.name);
+  });
   const top = pool[0]?.hit.score ?? 0;
   const floor = top >= 1000 ? Math.max(450, top - 800) : 0;
   const visible = floor ? pool.filter((item) => item.hit.score >= floor) : pool;

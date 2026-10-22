@@ -123,6 +123,31 @@ test("short aliases prefer the main game over unknown stubs and fuzzy noise", ()
   assert.equal(names("uncharted 4")[0], "Uncharted 4: A Thief's End");
 });
 
+test("mw2 ranks the known releases above the odd digit-titled record", () => {
+  const found = names("mw2", 12);
+  const odd = found.findIndex((name) => name === "Call of Duty Modern Warfare 2");
+  const remaster = found.findIndex((name) => /modern warfare 2 campaign remastered/i.test(name));
+  const mwii = found.findIndex((name) => /^Call of Duty: Modern Warfare II$/.test(name));
+  assert.ok(odd >= 0 && remaster >= 0 && mwii >= 0, found.join(" | "));
+  assert.ok(remaster < odd, found.join(" | "));
+  assert.ok(mwii < odd, found.join(" | "));
+  assert.match(names("cod mw2")[0], /modern warfare (2|ii)/i);
+  assert.equal(names("gow")[0], "God of War");
+  assert.equal(names("tlou")[0], "The Last of Us Part I");
+  assert.equal(names("uncharted 4")[0], "Uncharted 4: A Thief's End");
+});
+
+test("a numbered series lists the newest entry first", () => {
+  const found = names("fifa", 20);
+  const numbered = found.filter((name) => /^FIFA \d+$/.test(name));
+  const years = numbered.map((name) => Number(name.slice(5)));
+  assert.deepEqual(years, [...years].sort((a, b) => b - a), found.join(" | "));
+  assert.ok(years.includes(23) && years.includes(14), found.join(" | "));
+  assert.ok(years.indexOf(23) < years.indexOf(14), found.join(" | "));
+  assert.ok(years[0] >= 23, found.join(" | "));
+  assert.equal(names("fifa 14")[0], "FIFA 14");
+});
+
 test("titles.json stays compact", () => {
   const raw = readFileSync(new URL("../public/titles.json", import.meta.url));
   assert.ok(raw.length < 1_500_000, `raw ${raw.length}`);
