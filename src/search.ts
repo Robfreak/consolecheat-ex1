@@ -114,9 +114,13 @@ function foldRoman(norm: string): string {
   return norm.replace(ROMAN_WORD, (roman) => ROMAN[roman]);
 }
 
-function hasRomanNumeral(norm: string): boolean {
-  for (const part of norm.split(" ")) if (Object.hasOwn(ROMAN, part)) return true;
-  return false;
+function foldedNumerals(norm: string): Set<string> {
+  const out = new Set<string>();
+  for (const part of norm.split(" ")) {
+    const digit = ROMAN[part];
+    if (digit) out.add(digit);
+  }
+  return out;
 }
 
 // "final fantasy xv" starts with the letters of "final fantasy x" but not the term.
@@ -591,7 +595,7 @@ function scoreForm(
   form: { norm: string; flat: string; tokens: string[] },
   foldedQuery: string,
   queryTokens: string[],
-  strict: boolean,
+  numerals: ReadonlySet<string>,
 ): { score: number; miss: number } {
   const nameNorm = form.norm;
   const nameFlat = form.flat;
@@ -640,7 +644,8 @@ function scoreForm(
         if (kind === "exact") break;
       }
     }
-    if (!strict && kind === "miss") {
+    // The folded numeral is exact ("iv" is 4, not a prefix of 40). Other words stay fuzzy.
+    if (!numerals.has(queryToken) && kind === "miss") {
       for (let i = 0; i < form.tokens.length; i++) {
         if (used.has(i)) continue;
         const nameToken = form.tokens[i];
@@ -651,7 +656,7 @@ function scoreForm(
         }
       }
     }
-    if (!strict && kind === "miss" && queryToken.length >= 2) {
+    if (!numerals.has(queryToken) && kind === "miss" && queryToken.length >= 2) {
       for (let i = 0; i < form.tokens.length; i++) {
         if (used.has(i)) continue;
         const nameToken = form.tokens[i];
@@ -661,7 +666,9 @@ function scoreForm(
         if (distance <= 1) {
           const shorter = nameToken.length < queryToken.length ? nameToken : queryToken;
           const longer = nameToken.length < queryToken.length ? queryToken : nameToken;
-          if (longer.startsWith(shorter) && longer.length - shorter.length === 1 && shorter.length <= 3) continue;
+          const suffixOnly = longer.startsWith(shorter) && longer.length - shorter.length === 1;
+          // "go"/"gow" always. With a numeral, "rocky"/"rock" is a different word, not a typo.
+          if (suffixOnly && (shorter.length <= 3 || numerals.size > 0)) continue;
           kind = "fuzzy";
           used.add(i);
           break;
@@ -674,8 +681,6 @@ function scoreForm(
     else miss++;
   }
 
-  // A folded numeral must not ride a fuzzy word: "rocky iv" is not Rock Band 4.
-  if (strict && miss > 0) return { score: 0, miss };
   score += exact * 80 + prefix * 58 + fuzzy * 46;
   score -= miss * 90;
   if (queryTokens.length > 0 && miss === 0) score += 100;
@@ -765,7 +770,7 @@ export function searchIndex(index: Index, raw: string, filters: Filters): Search
   for (let variantIndex = 0; variantIndex < variants.length; variantIndex++) {
     const variant = variants[variantIndex];
     const folded = foldedVariants[variantIndex];
-    const strict = hasRomanNumeral(variant);
+    const numerals = foldedNumerals(variant);
     const queryTokens = tokensOf(folded);
     const queryFlat = folded.replace(/ /g, "");
     if (!queryFlat) continue;
@@ -815,7 +820,7 @@ export function searchIndex(index: Index, raw: string, filters: Filters): Search
       let best = -Infinity;
       let miss = queryTokens.length || 1;
       for (const form of prepared.forms) {
-        const result = scoreForm(form, folded, queryTokens, strict);
+        const result = scoreForm(form, folded, queryTokens, numerals);
         if (result.score > best || (result.score === best && result.miss < miss)) {
           best = result.score;
           miss = result.miss;

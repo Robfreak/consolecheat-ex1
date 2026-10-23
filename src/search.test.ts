@@ -146,6 +146,21 @@ test("a folded roman numeral does not fuzzy-match a different word", () => {
   assert.ok(!found.some((name) => /rock band 4/i.test(name)), found.join(" | ") || "(none)");
 });
 
+test("a roman numeral keeps typos in the other words", () => {
+  const cases: [string, RegExp][] = [
+    ["final fantsy vii", /^FINAL FANTASY VII$/],
+    ["final fantasy vii remke", /^FINAL FANTASY VII REMAKE$/],
+    ["kingdom harts iii", /^KINGDOM HEARTS Ⅲ$/],
+    ["resident evl ii", /^RESIDENT EVIL 2$/],
+    ["dragon qest xi", /dragon quest xi/i],
+    ["god of wr iii", /god of war iii/i],
+  ];
+  for (const [query, pattern] of cases) {
+    const found = names(query, 8);
+    assert.ok(found.some((name) => pattern.test(name)), `${query}: ${found.join(" | ") || "(none)"}`);
+  }
+});
+
 test("kept queries still resolve", () => {
   assert.equal(names("i am")[0], "I Am Dead");
   assert.equal(names("gta v")[0], "Grand Theft Auto V");
