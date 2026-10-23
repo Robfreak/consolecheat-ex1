@@ -107,11 +107,31 @@ const ROMAN: Record<string, string> = {
   xii: "12",
 };
 
-// Longer numerals first so "viii" does not become "8ii". i, v, and x stay words (GTA V, FF X).
+// Longer numerals first so "viii" does not become "8ii". i, v, and x stay words (GTA V, "i am").
 const ROMAN_WORD = /\b(?:xii|xi|viii|vii|vi|ix|iv|iii|ii)\b/g;
 
 function foldRoman(norm: string): string {
   return norm.replace(ROMAN_WORD, (roman) => ROMAN[roman]);
+}
+
+function foldedNumerals(norm: string): Set<string> {
+  const out = new Set<string>();
+  for (const part of norm.split(" ")) {
+    const digit = ROMAN[part];
+    if (digit) out.add(digit);
+  }
+  return out;
+}
+
+// "final fantasy xv" starts with the letters of "final fantasy x" but not the term.
+function boundaryPrefix(name: string, query: string): "equal" | "boundary" | "inside" | "no" {
+  if (name === query) return "equal";
+  if (!name.startsWith(query)) return "no";
+  return name[query.length] === " " ? "boundary" : "inside";
+}
+
+function hasBoundedTerm(name: string, query: string): boolean {
+  return name.startsWith(`${query} `) || name.endsWith(` ${query}`) || name.includes(` ${query} `);
 }
 
 const ALPHA = "abcdefghijklmnopqrstuvwxyz0123456789";
@@ -418,6 +438,8 @@ function regionPenalty(game: Game): number {
 type Prepared = {
   game: Game;
   forms: { norm: string; flat: string; tokens: string[] }[];
+  nameNorm: string;
+  nameTokens: string[];
 };
 
 export type Index = {
@@ -449,8 +471,10 @@ export function buildIndex(games: Game[]): Index {
     const forms: Prepared["forms"] = [];
     const seenTokens = new Set<string>();
     const seenGrams = new Set<string>();
+    const nameNorm = foldRoman(normalize(game.name));
+    const nameTokens = tokensOf(nameNorm);
     for (const text of texts) {
-      const norm = normalize(text);
+      const norm = foldRoman(normalize(text));
       if (!norm) continue;
       const flat = norm.replace(/ /g, "");
       const tokens = tokensOf(norm);
@@ -476,7 +500,7 @@ export function buildIndex(games: Game[]): Index {
         }
       }
     }
-    prepared.push({ game, forms });
+    prepared.push({ game, forms, nameNorm, nameTokens });
     game.skus.forEach((sku, si) => {
       ids.push({ id: sku.id.toUpperCase(), gi, si });
     });
@@ -569,19 +593,21 @@ function gamesForToken(index: Index, token: string): Map<number, Kind> {
 
 function scoreForm(
   form: { norm: string; flat: string; tokens: string[] },
-  queryNorm: string,
+  foldedQuery: string,
   queryTokens: string[],
+  numerals: ReadonlySet<string>,
 ): { score: number; miss: number } {
-  const nameNorm = foldRoman(form.norm);
-  const nameFlat = nameNorm.replace(/ /g, "");
-  const foldedQuery = foldRoman(queryNorm);
+  const nameNorm = form.norm;
+  const nameFlat = form.flat;
   const foldedFlat = foldedQuery.replace(/ /g, "");
+  const rel = boundaryPrefix(nameNorm, foldedQuery);
+  const spaced = foldedQuery.includes(" ");
   let score = 0;
-  if (nameNorm === foldedQuery) score += 1000;
-  else if (nameNorm.startsWith(foldedQuery)) score += 720;
+  if (rel === "equal") score += 1000;
+  else if (rel === "boundary") score += 720;
   else if (nameFlat === foldedFlat) score += 700;
-  else if (foldedFlat.length >= 4 && nameFlat.startsWith(foldedFlat)) score += 560;
-  else if (foldedFlat.length >= 4 && nameFlat.includes(foldedFlat)) score += 420;
+  else if (rel !== "inside" && !spaced && foldedFlat.length >= 4 && nameFlat.startsWith(foldedFlat)) score += 560;
+  else if (rel !== "inside" && foldedFlat.length >= 4 && (spaced ? hasBoundedTerm(nameNorm, foldedQuery) : nameFlat.includes(foldedFlat))) score += 420;
 
   let exact = 0;
   let prefix = 0;
@@ -618,7 +644,8 @@ function scoreForm(
         if (kind === "exact") break;
       }
     }
-    if (kind === "miss") {
+    // The folded numeral is exact ("iv" is 4, not a prefix of 40). Other words stay fuzzy.
+    if (!numerals.has(queryToken) && kind === "miss") {
       for (let i = 0; i < form.tokens.length; i++) {
         if (used.has(i)) continue;
         const nameToken = form.tokens[i];
@@ -629,7 +656,7 @@ function scoreForm(
         }
       }
     }
-    if (kind === "miss" && queryToken.length >= 2) {
+    if (!numerals.has(queryToken) && kind === "miss" && queryToken.length >= 2) {
       for (let i = 0; i < form.tokens.length; i++) {
         if (used.has(i)) continue;
         const nameToken = form.tokens[i];
@@ -639,7 +666,9 @@ function scoreForm(
         if (distance <= 1) {
           const shorter = nameToken.length < queryToken.length ? nameToken : queryToken;
           const longer = nameToken.length < queryToken.length ? queryToken : nameToken;
-          if (longer.startsWith(shorter) && longer.length - shorter.length === 1 && shorter.length <= 3) continue;
+          const suffixOnly = longer.startsWith(shorter) && longer.length - shorter.length === 1;
+          // "go"/"gow" always. With a numeral, "rocky"/"rock" is a different word, not a typo.
+          if (suffixOnly && (shorter.length <= 3 || numerals.size > 0)) continue;
           kind = "fuzzy";
           used.add(i);
           break;
@@ -663,24 +692,42 @@ function scoreForm(
 const PREFIX_WINDOW = 180;
 const PREFIX_PENALTY = 120;
 
-function preferCompleteDuplicates(pool: { hit: SearchHit }[]): void {
-  const folded = pool.map((item) => foldRoman(normalize(item.hit.game.name)));
+type Ranked = { hit: SearchHit; miss: number; nameNorm: string; nameTokens: string[] };
+
+function preferCompleteDuplicates(pool: Ranked[], queryNorms: string[]): void {
+  const folded = pool.map((item) => item.nameNorm);
   const groups = new Map<string, number[]>();
   for (let i = 0; i < folded.length; i++) {
     const list = groups.get(folded[i]);
     if (list) list.push(i);
     else groups.set(folded[i], [i]);
   }
-  // Only rows that collapse to the same title (Modern Warfare 2 / II) compete
-  // on how many IDs they carry, and only those short duplicates yield to a
-  // longer edition that is already within a small score window.
+  // Rows that collapse to the same title (Modern Warfare 2 / II) compete on
+  // how many IDs they carry. A short duplicate yields to a longer edition
+  // when that edition is already close, or when the query names the short title.
   const duplicate = new Set<number>();
-  for (const indexes of groups.values()) {
+  for (const [name, indexes] of groups) {
     if (indexes.length < 2) continue;
     for (const i of indexes) {
       duplicate.add(i);
       pool[i].hit.score += Math.min(pool[i].hit.game.skus.length, 20) * 4;
     }
+    if (name.length < 8 || !queryNorms.includes(name)) continue;
+    let bestShort = -Infinity;
+    for (const i of indexes) if (pool[i].hit.score > bestShort) bestShort = pool[i].hit.score;
+    let bestLonger = -1;
+    let bestLongerScore = -Infinity;
+    for (let j = 0; j < pool.length; j++) {
+      if (!folded[j].startsWith(`${name} `) || SIDE.test(folded[j])) continue;
+      const score = pool[j].hit.score;
+      const skus = pool[j].hit.game.skus.length;
+      const bestSkus = bestLonger < 0 ? -1 : pool[bestLonger].hit.game.skus.length;
+      if (score > bestLongerScore || (score === bestLongerScore && skus > bestSkus)) {
+        bestLonger = j;
+        bestLongerScore = score;
+      }
+    }
+    if (bestLonger >= 0 && bestLongerScore <= bestShort) pool[bestLonger].hit.score = bestShort + 1;
   }
   for (const i of duplicate) {
     if (folded[i].length < 8) continue;
@@ -696,12 +743,10 @@ function preferCompleteDuplicates(pool: { hit: SearchHit }[]): void {
 }
 
 // "fifa" ties FIFA 14 and FIFA 23; the trailing number is the only difference.
-function seriesNumber(name: string, queryNorm: string): number | null {
-  const tokens = tokensOf(foldRoman(normalize(name)));
+function seriesNumber(tokens: string[], queryTokens: string[]): number | null {
   if (tokens.length < 2) return null;
   const last = tokens[tokens.length - 1];
   if (!/^\d{1,4}$/.test(last)) return null;
-  const queryTokens = tokensOf(foldRoman(queryNorm));
   if (queryTokens.length === 0 || /^\d{1,4}$/.test(queryTokens[queryTokens.length - 1])) return null;
   if (queryTokens.join(" ") !== tokens.slice(0, -1).join(" ")) return null;
   return Number(last);
@@ -719,11 +764,15 @@ export function searchIndex(index: Index, raw: string, filters: Filters): Search
   const queryNorm = normalize(query);
   const expanded = expandQuery(queryNorm);
   const variants = expanded ? [queryNorm, expanded] : [queryNorm];
+  const foldedVariants = variants.map((variant) => foldRoman(variant));
   const bestByGame = new Map<number, { score: number; miss: number; queryNorm: string }>();
 
-  for (const variant of variants) {
-    const queryTokens = tokensOf(variant);
-    const queryFlat = variant.replace(/ /g, "");
+  for (let variantIndex = 0; variantIndex < variants.length; variantIndex++) {
+    const variant = variants[variantIndex];
+    const folded = foldedVariants[variantIndex];
+    const numerals = foldedNumerals(variant);
+    const queryTokens = tokensOf(folded);
+    const queryFlat = folded.replace(/ /g, "");
     if (!queryFlat) continue;
 
     const candidateScore = new Map<number, number>();
@@ -771,7 +820,7 @@ export function searchIndex(index: Index, raw: string, filters: Filters): Search
       let best = -Infinity;
       let miss = queryTokens.length || 1;
       for (const form of prepared.forms) {
-        const result = scoreForm(form, variant, queryTokens);
+        const result = scoreForm(form, folded, queryTokens, numerals);
         if (result.score > best || (result.score === best && result.miss < miss)) {
           best = result.score;
           miss = result.miss;
@@ -785,7 +834,7 @@ export function searchIndex(index: Index, raw: string, filters: Filters): Search
     }
   }
 
-  const scored: { hit: SearchHit; miss: number }[] = [];
+  const scored: Ranked[] = [];
   for (const [gi, best] of bestByGame) {
     const prepared = index.prepared[gi];
     scored.push({
@@ -796,16 +845,19 @@ export function searchIndex(index: Index, raw: string, filters: Filters): Search
         viaId: false,
       },
       miss: best.miss,
+      nameNorm: prepared.nameNorm,
+      nameTokens: prepared.nameTokens,
     });
   }
 
   const clean = scored.filter((item) => item.miss === 0);
   const pool = clean.length ? clean : scored.filter((item) => item.miss <= 1);
-  preferCompleteDuplicates(pool);
+  preferCompleteDuplicates(pool, foldedVariants);
+  const seriesQuery = tokensOf(foldedVariants[0] ?? "");
   pool.sort((a, b) => {
     if (b.hit.score !== a.hit.score) return b.hit.score - a.hit.score;
-    const aNumber = seriesNumber(a.hit.game.name, queryNorm);
-    const bNumber = seriesNumber(b.hit.game.name, queryNorm);
+    const aNumber = seriesNumber(a.nameTokens, seriesQuery);
+    const bNumber = seriesNumber(b.nameTokens, seriesQuery);
     if (aNumber !== null && bNumber !== null && aNumber !== bNumber) return bNumber - aNumber;
     return a.hit.game.name.localeCompare(b.hit.game.name);
   });
