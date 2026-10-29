@@ -117,7 +117,24 @@ function visibleSkus(hit: SearchHit, filters: Filters): Sku[] {
 
 function skuLine(sku: Sku): string {
   const region = sku.tag ? `${sku.region} ${sku.tag}` : sku.region === "?" ? "?" : sku.region;
-  return `${sku.id} ${region} ${sku.platform}`;
+  const disc = discCopy(sku);
+  return disc ? `${sku.id} ${region} ${sku.platform} ${disc}` : `${sku.id} ${region} ${sku.platform}`;
+}
+
+function discCopy(sku: Sku): string {
+  const versions = discVersions(sku);
+  if (!versions.length) return "";
+  return versions.length === 1 ? `disc ${versions[0]}` : `disc ${versions.join(" / ")}`;
+}
+
+function discVersions(sku: Sku): string[] {
+  const masters = sku.masters ?? [];
+  const seen: string[] = [];
+  for (const master of masters) {
+    const label = master.edition ? `${master.edition} ${master.version}` : master.version;
+    if (!seen.includes(label)) seen.push(label);
+  }
+  return seen;
 }
 
 export function App() {
@@ -471,6 +488,11 @@ function PlatformBlock({
                   {sku.id}
                   {done ? ` · ${t.copied}` : ""}
                 </span>
+                {sku.masters?.length ? (
+                  <span className="disc-pill" title={t.discHint}>
+                    {t.disc} {discVersions(sku).join(" · ")}
+                  </span>
+                ) : null}
                 <span className="ms-auto inline-flex h-11 items-center rounded-lg border border-line bg-surface px-3 text-sm font-medium text-fg">
                   {done ? t.copied : t.copy}
                 </span>

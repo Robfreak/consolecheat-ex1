@@ -21,6 +21,34 @@ const MW2_TOP3 = [
   "Call of Duty Modern Warfare 2",
 ];
 
+test("disc masters attach to the SKU and stay off unknown IDs", () => {
+  const sample = {
+    format: 2,
+    source: "test",
+    commit: "test",
+    license: "MIT",
+    generated: "2026-01-01",
+    games: 1,
+    ids: 2,
+    names: "0\tBloodborne",
+    skus: "C00207E4@0\n92E4UK@0",
+    discs: "CUSA00207\t01.00\nCUSA01082\t01.01|Hits=01.09",
+  } satisfies TitlesFile;
+  const decoded = decodeTitles(sample);
+  const byId = new Map(decoded[0].skus.map((sku) => [sku.id, sku]));
+  assert.deepEqual(byId.get("CUSA00207")?.masters, [{ version: "01.00" }]);
+  assert.equal(byId.get("CUSA00299")?.masters, undefined);
+});
+
+test("Bloodborne's EU disc master is 01.00 when the catalog includes it", () => {
+  const sku = games.flatMap((game) => game.skus).find((item) => item.id === "CUSA00207");
+  assert.ok(sku);
+  if (!file.discs) return;
+  assert.ok(sku.masters?.some((master) => master.version === "01.00"));
+  const evil = games.flatMap((game) => game.skus).find((item) => item.id === "CUSA01082");
+  assert.ok(evil?.masters?.some((master) => master.version === "01.01"));
+});
+
 test("typo and partial: god of wr finds God of War first, with every region", () => {
   const hits = searchIndex(index, "god of wr", all);
   assert.equal(hits[0]?.game.name, "God of War");

@@ -27,6 +27,10 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
+## Disc master versions
+
+Retail disc versions shown next to a title ID (the “Data Version” on the physical disc) are taken from public title pages on [SerialStation](https://serialstation.com/). SerialStation is not affiliated with this project. Only the title ID, edition label, and disc version are kept. Patch versions and package links are not. A missing disc version means SerialStation had no archived disc row for that ID when the file was built.
+
 ## Fonts
 
 Outfit (copyright 2021 The Outfit Project Authors) and Source Sans 3 (copyright Google Inc.) are bundled from the `@fontsource` packages. Both are under the SIL Open Font License 1.1. The license text shipped with the site is `public/FONT-OFL.txt`.

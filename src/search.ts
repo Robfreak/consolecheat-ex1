@@ -1,11 +1,17 @@
 export type Region = "EU" | "US" | "JP" | "Asia" | "KR" | "INT" | "?";
 export type Platform = "PS4" | "PS5";
 
+export type DiscMaster = {
+  version: string;
+  edition?: string;
+};
+
 export type Sku = {
   id: string;
   region: Region;
   platform: Platform;
   tag?: string;
+  masters?: DiscMaster[];
 };
 
 export type Game = {
@@ -25,6 +31,8 @@ export type TitlesFile = {
   names: string;
   aliases?: Record<string, string[]>;
   skus: string;
+  /** Title ID, tab, disc masters. One version, or edition=version pairs joined by |. */
+  discs?: string;
 };
 
 const REGION_FROM: Record<string, Region> = {
@@ -151,8 +159,29 @@ function decodeNameList(text: string): string[] {
   return names;
 }
 
+function decodeDiscMasters(text: string | undefined): Map<string, DiscMaster[]> {
+  const map = new Map<string, DiscMaster[]>();
+  if (!text) return map;
+  for (const line of text.split("\n")) {
+    if (!line) continue;
+    const tab = line.indexOf("\t");
+    if (tab < 0) continue;
+    const id = line.slice(0, tab);
+    const masters: DiscMaster[] = [];
+    for (const part of line.slice(tab + 1).split("|")) {
+      if (!part) continue;
+      const eq = part.indexOf("=");
+      if (eq < 0) masters.push({ version: part });
+      else masters.push({ edition: part.slice(0, eq), version: part.slice(eq + 1) });
+    }
+    if (id && masters.length) map.set(id, masters);
+  }
+  return map;
+}
+
 export function decodeTitles(file: TitlesFile): Game[] {
   const names = decodeNameList(file.names);
+  const discs = decodeDiscMasters(file.discs);
   const grouped: Sku[][] = Array.from({ length: names.length }, () => []);
   let prefix = "";
   let num = 0;
@@ -175,11 +204,14 @@ export function decodeTitles(file: TitlesFile): Game[] {
     const tag = at >= 0 ? line.slice(i + 2, at) : "";
     const gi = Number(line.slice(at + 1));
     if (!grouped[gi]) continue;
+    const id = `${prefix === "P" ? "PPSA" : "CUSA"}${String(num).padStart(5, "0")}`;
+    const masters = discs.get(id);
     grouped[gi].push({
-      id: `${prefix === "P" ? "PPSA" : "CUSA"}${String(num).padStart(5, "0")}`,
+      id,
       region,
       platform,
       tag: tag || undefined,
+      masters,
     });
   }
   return names.map((name, gi) => {

@@ -144,7 +144,9 @@ function Datenschutz() {
         <h2 className="mt-2 font-display text-2xl font-semibold tracking-tight text-fg">Title-Liste</h2>
         <p>
           Die Title-IDs stammen aus der MIT-Liste andshrew/PlayStation-Titles. Der Browser lädt die aufbereitete Datei
-          von dieser Website, nicht von einem separaten Suchdienst.
+          von dieser Website, nicht von einem separaten Suchdienst. Steht neben einer CUSA ein Disc-Stand, ist das die
+          Data Version der Retail-Disc bei SerialStation, nicht die neueste PSN-Patchversion. Fehlt der Stand, ist keine
+          Disc-Angabe hinterlegt.
         </p>
         <h2 className="mt-2 font-display text-2xl font-semibold tracking-tight text-fg">Verantwortliche Stelle</h2>
         <p>
@@ -195,7 +197,7 @@ function Datenschutz() {
           supervisory authority.
         </p>
         <h2 className="mt-2 font-display text-2xl font-semibold tracking-tight text-fg">Title list</h2>
-        <p>The title IDs come from the MIT-licensed andshrew/PlayStation-Titles list. The browser loads the prepared file from this website, not from a separate search service.</p>
+        <p>The title IDs come from the MIT-licensed andshrew/PlayStation-Titles list. The browser loads the prepared file from this website, not from a separate search service. A disc version next to a CUSA is the retail disc data version recorded by SerialStation, not the latest PSN patch. If it is missing, no disc version is on file.</p>
         <h2 className="mt-2 font-display text-2xl font-semibold tracking-tight text-fg">Who is responsible</h2>
         <p>The name and address belong in the Impressum. While that page only has placeholders, no real contact details are published here on purpose.</p>
       </div>

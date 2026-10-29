@@ -376,12 +376,55 @@ if (games.length < 8000 || seenIds.size < 30000) {
 
 if (failed) process.exit(1);
 
+function loadDiscMasters(games) {
+  const path = resolve(root, "data/disc-masters.tsv");
+  if (!existsSync(path)) return "";
+  const known = new Set();
+  for (const game of games) {
+    for (const sku of game.skus) known.add(sku.id);
+  }
+  const lines = [];
+  const byId = new Map();
+  for (const raw of readFileSync(path, "utf8").split("\n")) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    const tab = line.indexOf("\t");
+    if (tab < 0) throw new Error(`Bad disc row: ${line}`);
+    const id = line.slice(0, tab);
+    const spec = line.slice(tab + 1);
+    if (!/^(CUSA|PPSA)\d{5}$/.test(id)) throw new Error(`Bad disc title ID: ${id}`);
+    if (!known.has(id)) continue;
+    const parts = spec.split("|").filter(Boolean);
+    if (!parts.length) throw new Error(`Empty disc version for ${id}`);
+    for (const part of parts) {
+      const version = part.includes("=") ? part.slice(part.indexOf("=") + 1) : part;
+      if (!/^\d{2}\.\d{2}$/.test(version)) throw new Error(`Bad disc version ${id} ${part}`);
+    }
+    if (byId.has(id)) throw new Error(`Duplicate disc row ${id}`);
+    byId.set(id, spec);
+    lines.push(`${id}\t${spec}`);
+  }
+  for (const [id, version] of [
+    ["CUSA00207", "01.00"],
+    ["CUSA01082", "01.01"],
+  ]) {
+    const spec = byId.get(id) ?? "";
+    if (!spec.split("|").some((part) => part.endsWith(version) && (part === version || part.endsWith(`=${version}`)))) {
+      throw new Error(`Disc master ${id} should include ${version}, got ${spec || "nothing"}`);
+    }
+  }
+  console.log(`Disc masters ${lines.length}`);
+  return lines.join("\n");
+}
+
 const payload = encodeCatalog(games, {
   source: repoUrl,
   commit,
   license: "MIT",
   generated: new Date().toISOString().slice(0, 10),
 });
+const discs = loadDiscMasters(games);
+if (discs) payload.discs = discs;
 assertRoundTrip(games, payload);
 const body = JSON.stringify(payload);
 writeFileSync(outPath, body);
