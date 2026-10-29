@@ -7,15 +7,15 @@ function fontsourceWoff2() {
     name: "fontsource-woff2",
     enforce: "pre" as const,
     transform(code: string, id: string) {
-      if (!id.includes("/@fontsource/") || !id.endsWith(".css")) return null;
-      return code.replace(/,\s*url\([^)]+\.woff\)\s*format\((['"])woff\1\)/g, "");
+      if (!id.includes("@fontsource") || !id.endsWith(".css")) return null;
+      return code.replace(/,\s*url\([^)]+\.woff\)\s*format\((['\"])woff\1\)/g, "");
     },
   };
 }
 
-// Project site: https://robfreak.github.io/consolecheat-ex1/
+// Custom domain: https://title-id-finder.consolecheat.com/
 export default defineConfig({
-  base: "/consolecheat-ex1/",
+  base: "/",
   plugins: [fontsourceWoff2(), react(), tailwindcss()],
   server: { host: "0.0.0.0" },
   preview: { host: "0.0.0.0", port: 4173 },
