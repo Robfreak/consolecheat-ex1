@@ -7,8 +7,8 @@ function fontsourceWoff2() {
     name: "fontsource-woff2",
     enforce: "pre" as const,
     transform(code: string, id: string) {
-      if (!id.includes("@fontsource") || !id.endsWith(".css")) return null;
-      return code.replace(/,\s*url\([^)]+\.woff\)\s*format\((['\"])woff\1\)/g, "");
+      if (!id.includes("/@fontsource/") || !id.endsWith(".css")) return null;
+      return code.replace(/,\s*url\([^)]+\.woff\)\s*format\((['"])woff\1\)/g, "");
     },
   };
 }
