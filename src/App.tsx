@@ -1,6 +1,5 @@
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { Mark, MoonIcon, SunIcon } from "./icons";
-import { LegalPage } from "./legal";
 import {
   RTL,
   copy,
@@ -28,14 +27,6 @@ const EXAMPLES = ["God of War", "Gran Turismo", "The Last of Us", "CUSA07820"];
 const REGION_FILTERS: Region[] = ["EU", "US", "JP", "Asia", "KR", "INT"];
 
 type Theme = "light" | "dark";
-type Page = "home" | "impressum" | "datenschutz";
-
-function readPage(): Page {
-  const hash = location.hash.replace(/^#\/?/, "");
-  if (hash === "impressum") return "impressum";
-  if (hash === "datenschutz") return "datenschutz";
-  return "home";
-}
 
 function readLang(): Lang {
   try {
@@ -139,7 +130,6 @@ export function App() {
   const [index, setIndex] = useState<Index | null>(null);
   const [error, setError] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
-  const [page, setPage] = useState<Page>(readPage);
   const deferred = useDeferredValue(query);
   const t = copy[lang];
 
@@ -148,20 +138,8 @@ export function App() {
   }, [lang]);
 
   useEffect(() => {
-    const sync = () => setPage(readPage());
-    window.addEventListener("hashchange", sync);
-    window.addEventListener("popstate", sync);
-    return () => {
-      window.removeEventListener("hashchange", sync);
-      window.removeEventListener("popstate", sync);
-    };
-  }, []);
-
-  useEffect(() => {
-    const name = page === "impressum" ? "Impressum" : page === "datenschutz" ? "Datenschutz" : t.title;
-    document.title = `${name} · consolecheat`;
-    if (page !== "home") window.scrollTo(0, 0);
-  }, [page, t.title]);
+    document.title = `${t.title} · consolecheat`;
+  }, [t.title]);
 
   useEffect(() => {
     const url = new URL(location.href);
@@ -244,7 +222,6 @@ export function App() {
         </div>
       </header>
 
-      {page === "home" ? (
       <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
         <p className="eyebrow text-xs font-medium uppercase text-steel">{t.eyebrow}</p>
         <h1 className="display-title mt-3 max-w-3xl font-display text-4xl font-semibold tracking-tight sm:text-5xl">
@@ -356,45 +333,13 @@ export function App() {
           </div>
         </section>
       </main>
-      ) : (
-        <LegalPage
-          page={page}
-          homeHref={`${import.meta.env.BASE_URL}${location.search}`}
-          onHome={(event) => {
-            event.preventDefault();
-            history.pushState(null, "", `${location.pathname}${location.search}`);
-            setPage("home");
-            window.scrollTo(0, 0);
-          }}
-        />
-      )}
 
       <footer className="border-t border-line">
         <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-8 text-sm leading-relaxed text-subtle sm:px-6">
           <p className="text-fg">{t.brand}</p>
-          <nav className="flex flex-wrap gap-x-4 gap-y-1" aria-label="Impressum und Datenschutz">
-            <a href="#impressum" className="text-steel underline-offset-4 hover:underline">
-              Impressum
-            </a>
-            <a href="#datenschutz" className="text-steel underline-offset-4 hover:underline">
-              Datenschutz
-            </a>
-          </nav>
           <p>{t.freeClaim}</p>
           <p>{t.privacyClaim}</p>
           <p>{t.footerNote}</p>
-          {file ? (
-            <p>
-              <a
-                href={file.source}
-                className="text-steel underline-offset-4 hover:underline"
-              >
-                {t.source}
-              </a>
-              {file.commit ? ` · ${file.commit.slice(0, 7)}` : ""} · {file.license}
-              {file.generated ? ` · ${file.generated}` : ""}
-            </p>
-          ) : null}
         </div>
       </footer>
     </div>
