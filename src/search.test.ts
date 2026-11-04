@@ -174,6 +174,65 @@ test("a folded roman numeral does not fuzzy-match a different word", () => {
   assert.ok(!found.some((name) => /rock band 4/i.test(name)), found.join(" | ") || "(none)");
 });
 
+test("a wrong numeral yields no hit", () => {
+  for (const query of [
+    "kingdom hearts iv",
+    "kingdom hearts 4",
+    "dragon quest xii",
+    "dragon quest 12",
+    "god of war ii",
+    "god of war 2",
+  ]) {
+    assert.deepEqual(names(query, 12), [], query);
+  }
+  assert.equal(names("kingdom hearts iii")[0], "KINGDOM HEARTS Ⅲ");
+  assert.equal(names("kingdom hearts 3")[0], "KINGDOM HEARTS Ⅲ");
+  assert.match(names("dragon quest xi")[0], /^Dragon Quest XI$/);
+  assert.match(names("dragon quest 11")[0], /^Dragon Quest XI$/);
+  assert.equal(names("god of war iii")[0], "God of War III Remastered");
+  assert.equal(names("god of war 3")[0], "God of War III Remastered");
+  assert.equal(names("gta 5")[0], "Grand Theft Auto V");
+  assert.ok(!names("gta 4", 8).includes("Grand Theft Auto V"));
+  assert.ok(!names("gta iv", 8).includes("Grand Theft Auto V"));
+});
+
+test("an arabic numeral does not fuzzy-match a different word", () => {
+  const found = names("rocky 4", 12);
+  assert.ok(!found.some((name) => /rock band 4/i.test(name)), found.join(" | ") || "(none)");
+  assert.equal(names("uncharted 4")[0], "Uncharted 4: A Thief's End");
+  assert.equal(names("fifa 23")[0], "FIFA 23");
+  assert.equal(names("fifa 14")[0], "FIFA 14");
+});
+
+test("mortal kombat x finds X and XL", () => {
+  const found = names("mortal kombat x", 8);
+  assert.ok(found.includes("Mortal Kombat X"), found.join(" | ") || "(none)");
+  assert.ok(found.includes("Mortal Kombat XL"), found.join(" | ") || "(none)");
+  assert.equal(found[0], "Mortal Kombat X");
+});
+
+test("ff abbreviates final fantasy", () => {
+  assert.match(names("ff xv")[0], /^FINAL FANTASY XV$/);
+  assert.match(names("ff 15")[0], /^FINAL FANTASY XV$/);
+  assert.match(names("final fantasy 15")[0], /^FINAL FANTASY XV$/);
+  assert.equal(names("ff7")[0], "FINAL FANTASY VII");
+  assert.equal(names("ff vii")[0], "FINAL FANTASY VII");
+  assert.equal(names("ff x")[0], "FINAL FANTASY X/X-2 HD Remaster");
+  assert.equal(names("final fantasy x")[0], "FINAL FANTASY X/X-2 HD Remaster");
+  assert.equal(names("final fantasy x-2")[0], "FINAL FANTASY X/X-2 HD Remaster");
+  assert.ok(!names("final fantasy x-2", 8).includes("FINAL FANTASY II"));
+  assert.equal(names("final fantasy 2")[0], "FINAL FANTASY II");
+});
+
+test("a short prefix stays with the series", () => {
+  const gow = names("god of wa", 5);
+  assert.ok(gow.length >= 5, gow.join(" | "));
+  assert.ok(gow.every((name) => /god of war/i.test(name)), gow.join(" | "));
+  const gran = names("gran tur", 5);
+  assert.ok(!gran.includes("The Grand Tour Game"), gran.join(" | "));
+  assert.ok(gran.some((name) => /gran turismo/i.test(name)), gran.join(" | "));
+});
+
 test("a roman numeral keeps typos in the other words", () => {
   const cases: [string, RegExp][] = [
     ["final fantsy vii", /^FINAL FANTASY VII$/],

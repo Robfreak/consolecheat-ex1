@@ -113,25 +113,145 @@ const ROMAN: Record<string, string> = {
   ix: "9",
   xi: "11",
   xii: "12",
+  xiii: "13",
+  xiv: "14",
+  xv: "15",
+  xvi: "16",
+  xvii: "17",
+  xviii: "18",
+  xix: "19",
 };
 
-// Longer numerals first so "viii" does not become "8ii". i, v, and x stay words (GTA V, "i am").
-const ROMAN_WORD = /\b(?:xii|xi|viii|vii|vi|ix|iv|iii|ii)\b/g;
+// i, v, and x stay words (GTA V, FF X, "i am"). xx and xl stay words too
+// (Metal Slug XX, Mortal Kombat XL).
+const SINGLE_ROMAN: Record<string, string> = { i: "1", v: "5", x: "10" };
+const ROMAN_LETTER: Record<string, string> = { "1": "i", "5": "v", "10": "x" };
 
 function foldRoman(norm: string): string {
-  return norm.replace(ROMAN_WORD, (roman) => ROMAN[roman]);
+  let out = "";
+  let changed = false;
+  let i = 0;
+  while (i < norm.length) {
+    const space = norm.indexOf(" ", i);
+    const end = space < 0 ? norm.length : space;
+    const word = norm.slice(i, end);
+    const digit = ROMAN[word];
+    if (digit) {
+      if (!changed) {
+        out = norm.slice(0, i);
+        changed = true;
+      }
+      out += digit;
+    } else if (changed) {
+      out += word;
+    }
+    if (space < 0) break;
+    if (changed) out += " ";
+    i = end + 1;
+  }
+  return changed ? out : norm;
 }
 
-function foldedNumerals(norm: string): Set<string> {
-  const out = new Set<string>();
+function digitSequence(norm: string): string[] {
+  const out: string[] = [];
   for (const part of norm.split(" ")) {
-    const digit = ROMAN[part];
-    if (digit) out.add(digit);
+    if (/^\d{1,4}$/.test(part)) out.push(part);
   }
   return out;
 }
 
-// "final fantasy xv" starts with the letters of "final fantasy x" but not the term.
+function numeralSet(folded: string): Set<string> {
+  return new Set(digitSequence(folded));
+}
+
+// Letters that identify the series and sit in front of a later subtitle number
+// ("final fantasy x x 2", "mega man x ... 2"). A following digit is X-2, not II.
+function leadingLetterValues(norm: string): string[] {
+  const out: string[] = [];
+  for (const part of norm.split(" ")) {
+    if (/^\d{1,4}$/.test(part)) break;
+    const value = SINGLE_ROMAN[part];
+    if (value) out.push(value);
+  }
+  return out;
+}
+
+function letterValues(norm: string): string[] {
+  const out: string[] = [];
+  for (const part of norm.split(" ")) {
+    const value = SINGLE_ROMAN[part];
+    if (value) out.push(value);
+  }
+  return out;
+}
+
+function mentionsLetter(queryNorm: string, values: string[]): boolean {
+  const want = new Set<string>();
+  for (const value of values) {
+    const letter = ROMAN_LETTER[value];
+    if (letter) want.add(letter);
+  }
+  if (want.size === 0) return false;
+  for (const part of queryNorm.split(" ")) if (want.has(part)) return true;
+  return false;
+}
+
+function isNumeralPrefix(query: string[], title: string[]): boolean {
+  if (title.length < query.length) return false;
+  for (let i = 0; i < query.length; i++) if (query[i] !== title[i]) return false;
+  return true;
+}
+
+// "dragon quest i and 2" is both I and II. "final fantasy x x 2" is X-2, not II.
+function digitFollowsConjunction(norm: string): boolean {
+  let letter = false;
+  let conjunction = false;
+  for (const part of norm.split(" ")) {
+    if (/^\d{1,4}$/.test(part)) return letter && conjunction;
+    if (part === "and" || part === "or") {
+      if (letter) conjunction = true;
+    } else if (SINGLE_ROMAN[part]) letter = true;
+  }
+  return false;
+}
+
+function missesQueryLetter(queryNorm: string, titleNorm: string): boolean {
+  let title = "";
+  for (const part of queryNorm.split(" ")) {
+    if (!SINGLE_ROMAN[part]) continue;
+    if (!title) title = ` ${titleNorm} `;
+    if (!title.includes(` ${part} `)) return true;
+  }
+  return false;
+}
+
+// A typed number has to land on the same series slot. "iv" is not III, "xii" is
+// not XI, and "ii" is not the unnumbered God of War. Missing the number is a
+// miss too: better no ID than a wrong one. Single-letter i/v/x stay words in
+// the query so "mortal kombat x" still reaches XL, but a title's V still
+// answers an arabic 5 ("gta 5", "metal gear solid 5"). A query that writes
+// both the letter and a digit ("final fantasy x-2") keeps that letter.
+function numeralConflict(queryNorm: string, titleNorm: string): boolean {
+  const queryDigits = digitSequence(queryNorm);
+  if (queryDigits.length === 0) return false;
+  if (missesQueryLetter(queryNorm, titleNorm)) return true;
+  const titleDigits = digitSequence(titleNorm);
+  const leading = leadingLetterValues(titleNorm);
+  if (titleDigits.length === 0) {
+    const letters = letterValues(titleNorm);
+    if (letters.length === 0) return true;
+    return !isNumeralPrefix(queryDigits, letters);
+  }
+  if (leading.length > 0 && !mentionsLetter(queryNorm, leading)) {
+    if (isNumeralPrefix(queryDigits, leading)) return false;
+    if (digitFollowsConjunction(titleNorm) && isNumeralPrefix(queryDigits, titleDigits)) return false;
+    return true;
+  }
+  return !isNumeralPrefix(queryDigits, titleDigits);
+}
+
+// "gran tur" / "god of wa" continue into the next word. "final fantasy xv" does
+// not: xv is folded to 15 before this check, so X stays on a word boundary.
 function boundaryPrefix(name: string, query: string): "equal" | "boundary" | "inside" | "no" {
   if (name === query) return "equal";
   if (!name.startsWith(query)) return "no";
@@ -379,6 +499,7 @@ const TOKEN_ALIAS: Record<string, string> = {
   hzd: "horizon zero dawn",
   hfw: "horizon forbidden west",
   nfs: "need for speed",
+  ff: "final fantasy",
   ff7: "final fantasy 7",
   ff7r: "final fantasy 7 remake",
   p5: "persona 5",
@@ -503,13 +624,17 @@ export function buildIndex(games: Game[]): Index {
     const forms: Prepared["forms"] = [];
     const seenTokens = new Set<string>();
     const seenGrams = new Set<string>();
-    const nameNorm = foldRoman(normalize(game.name));
-    const nameTokens = tokensOf(nameNorm);
-    for (const text of texts) {
-      const norm = foldRoman(normalize(text));
+    let nameNorm = "";
+    let nameTokens: string[] = [];
+    for (let textIndex = 0; textIndex < texts.length; textIndex++) {
+      const norm = foldRoman(normalize(texts[textIndex]));
+      if (textIndex === 0) {
+        nameNorm = norm;
+        nameTokens = norm ? tokensOf(norm) : [];
+      }
       if (!norm) continue;
       const flat = norm.replace(/ /g, "");
-      const tokens = tokensOf(norm);
+      const tokens = textIndex === 0 ? nameTokens : tokensOf(norm);
       forms.push({ norm, flat, tokens });
       for (const token of tokens) {
         if (seenTokens.has(token)) continue;
@@ -631,15 +756,16 @@ function scoreForm(
 ): { score: number; miss: number } {
   const nameNorm = form.norm;
   const nameFlat = form.flat;
+  if (numeralConflict(foldedQuery, nameNorm)) return { score: -Infinity, miss: queryTokens.length + 1 };
   const foldedFlat = foldedQuery.replace(/ /g, "");
   const rel = boundaryPrefix(nameNorm, foldedQuery);
   const spaced = foldedQuery.includes(" ");
   let score = 0;
   if (rel === "equal") score += 1000;
-  else if (rel === "boundary") score += 720;
+  else if (rel === "boundary" || rel === "inside") score += 720;
   else if (nameFlat === foldedFlat) score += 700;
-  else if (rel !== "inside" && !spaced && foldedFlat.length >= 4 && nameFlat.startsWith(foldedFlat)) score += 560;
-  else if (rel !== "inside" && foldedFlat.length >= 4 && (spaced ? hasBoundedTerm(nameNorm, foldedQuery) : nameFlat.includes(foldedFlat))) score += 420;
+  else if (!spaced && foldedFlat.length >= 4 && nameFlat.startsWith(foldedFlat)) score += 560;
+  else if (foldedFlat.length >= 4 && (spaced ? hasBoundedTerm(nameNorm, foldedQuery) : nameFlat.includes(foldedFlat))) score += 420;
 
   let exact = 0;
   let prefix = 0;
@@ -802,7 +928,7 @@ export function searchIndex(index: Index, raw: string, filters: Filters): Search
   for (let variantIndex = 0; variantIndex < variants.length; variantIndex++) {
     const variant = variants[variantIndex];
     const folded = foldedVariants[variantIndex];
-    const numerals = foldedNumerals(variant);
+    const numerals = numeralSet(folded);
     const queryTokens = tokensOf(folded);
     const queryFlat = folded.replace(/ /g, "");
     if (!queryFlat) continue;
