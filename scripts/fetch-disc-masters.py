@@ -11,12 +11,12 @@ from __future__ import annotations
 
 import gzip
 import html
+import http.client
 import json
 import os
 import re
-import subprocess
+import ssl
 import sys
-import tempfile
 import time
 from pathlib import Path
 
@@ -130,51 +130,59 @@ def mark_seen(title_id: str) -> None:
         handle.write(title_id + "\n")
 
 
-def fetch_page(url: str) -> str | None:
-    """Return HTML, or None when the capture is not a 200. Raises on throttle."""
+def fetch_page(conn_box: list, url_path: str) -> str | None:
+    """GET one archived page on a kept-alive connection. None if it is not a 200."""
     last = "error"
-    for attempt in range(12):
-        fd, path = tempfile.mkstemp(prefix="disc-")
-        os.close(fd)
-        try:
-            result = subprocess.run(
-                [
-                    "curl",
-                    "-sS",
-                    "--compressed",
-                    "--http1.1",
-                    "-L",
-                    "--max-redirs",
-                    "3",
-                    "-m",
-                    "40",
-                    "-A",
-                    UA,
-                    "-o",
-                    path,
-                    "-w",
-                    "%{http_code}",
-                    url,
-                ],
-                capture_output=True,
-                text=True,
+    for attempt in range(8):
+        if conn_box[0] is None:
+            conn_box[0] = http.client.HTTPSConnection(
+                "web.archive.org", timeout=30, context=ssl.create_default_context()
             )
-            status = (result.stdout or "").strip()
-            if result.returncode != 0 or status in {"000", "429", "503", "502", "504"}:
-                last = status or (result.stderr or "").strip()[:160]
-                time.sleep(min(40, 8 + attempt * 4))
-                continue
-            if status != "200":
+        conn = conn_box[0]
+        loc = url_path
+        try:
+            for _hop in range(4):
+                conn.request(
+                    "GET",
+                    loc,
+                    headers={
+                        "User-Agent": UA,
+                        "Accept-Encoding": "gzip",
+                        "Connection": "keep-alive",
+                    },
+                )
+                resp = conn.getresponse()
+                body = resp.read()
+                status = resp.status
+                if status in {301, 302, 303, 307, 308}:
+                    nxt = resp.getheader("Location") or ""
+                    if "web.archive.org" in nxt:
+                        loc = nxt.split("web.archive.org", 1)[1]
+                        continue
+                    if nxt.startswith("/"):
+                        loc = nxt
+                        continue
+                    return None
+                if status in {429, 503, 502, 504}:
+                    last = str(status)
+                    time.sleep(min(20, 4 + attempt * 3))
+                    break
+                if status != 200:
+                    return None
+                if body[:2] == b"\x1f\x8b":
+                    body = gzip.decompress(body)
+                return body.decode("utf-8", "replace")
+            else:
                 return None
-            raw = Path(path).read_bytes()
-            if raw[:2] == b"\x1f\x8b":
-                raw = gzip.decompress(raw)
-            return raw.decode("utf-8", "replace")
-        finally:
+        except Exception as exc:  # noqa: BLE001
+            last = type(exc).__name__
             try:
-                os.remove(path)
-            except OSError:
+                conn.close()
+            except Exception:
                 pass
+            conn_box[0] = None
+            time.sleep(min(20, 2 + attempt * 2))
+            continue
     raise RuntimeError(last)
 
 
@@ -187,10 +195,12 @@ def main() -> None:
     print(f"captures {len(items)} pending {len(pending)} already {len(grouped)}", flush=True)
     done = 0
     failed = 0
+    conn_box: list = [None]
+    started = time.time()
     for title_id, timestamp, original in pending:
-        url = f"https://web.archive.org/web/{timestamp}id_/{original}"
+        url_path = f"/web/{timestamp}id_/{original}"
         try:
-            page = fetch_page(url)
+            page = fetch_page(conn_box, url_path)
         except Exception as exc:  # noqa: BLE001
             failed += 1
             print("fetch", title_id, type(exc).__name__, exc, flush=True)
@@ -206,9 +216,13 @@ def main() -> None:
         write_out(grouped)
         mark_seen(title_id)
         if done % 25 == 0:
-            print(f"fetched {done}/{len(pending)} with-disc {len(grouped)} failed {failed}", flush=True)
-        else:
-            print(f"ok {title_id} discs {len(grouped)}", flush=True)
+            rate = done / max(time.time() - started, 0.1)
+            print(
+                f"fetched {done}/{len(pending)} with-disc {len(grouped)} failed {failed} {rate:.2f}/s",
+                flush=True,
+            )
+    if conn_box[0] is not None:
+        conn_box[0].close()
     write_out(grouped)
     print(f"wrote {OUT} rows={len(grouped)} failed={failed}", flush=True)
 
