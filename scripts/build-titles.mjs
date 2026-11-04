@@ -73,16 +73,55 @@ function download() {
   );
 }
 
+function readCommitMeta() {
+  const url = "https://api.github.com/repos/andshrew/PlayStation-Titles/commits/main";
+  const attempts = [
+    [
+      "curl",
+      [
+        "-fsSL",
+        "--retry",
+        "3",
+        "-H",
+        "User-Agent: consolecheat-title-id-finder",
+        "-H",
+        "Accept: application/vnd.github+json",
+        url,
+      ],
+    ],
+    ["gh", ["api", "--hostname", "github.com", "repos/andshrew/PlayStation-Titles/commits/main"]],
+  ];
+  for (const [command, args] of attempts) {
+    try {
+      const meta = JSON.parse(
+        execFileSync(command, args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }),
+      );
+      if (meta && meta.sha) return meta;
+    } catch {
+      // The public rate limit often answers 403. The next attempt is authenticated.
+    }
+  }
+  return null;
+}
+
+let previousCatalog = null;
+if (existsSync(outPath)) {
+  try {
+    previousCatalog = JSON.parse(readFileSync(outPath, "utf8"));
+  } catch {
+    previousCatalog = null;
+  }
+}
+
 let commit = "";
-try {
-  const meta = execFileSync(
-    "curl",
-    ["-fsSL", "--retry", "3", "https://api.github.com/repos/andshrew/PlayStation-Titles/commits/main"],
-    { encoding: "utf8" },
-  );
-  commit = JSON.parse(meta).sha || "";
-} catch {
-  commit = "";
+let commitDate = "";
+const commitMeta = readCommitMeta();
+if (commitMeta) {
+  commit = commitMeta.sha || "";
+  commitDate = (commitMeta.commit?.committer?.date || commitMeta.commit?.author?.date || "").slice(0, 10);
+} else if (previousCatalog && previousCatalog.commit) {
+  commit = previousCatalog.commit;
+  console.warn("Commit lookup failed; keeping the commit already recorded in titles.json.");
 }
 
 if (process.argv.includes("--offline")) {
@@ -417,18 +456,35 @@ function loadDiscMasters(games) {
   return lines.join("\n");
 }
 
+function catalogSignature(payload) {
+  const { generated, ...rest } = payload;
+  return JSON.stringify(rest);
+}
+
+function resolveGenerated(payload, previous) {
+  if (previous && typeof previous.generated === "string" && previous.generated) {
+    if (catalogSignature(previous) === catalogSignature(payload)) return previous.generated;
+  }
+  // Source commit date when the catalog moved with upstream, otherwise the
+  // day the local disc table changed the bytes.
+  if (commitDate && (!previous || previous.commit !== payload.commit)) return commitDate;
+  return new Date().toISOString().slice(0, 10);
+}
+
 const payload = encodeCatalog(games, {
   source: repoUrl,
   commit,
   license: "MIT",
-  generated: new Date().toISOString().slice(0, 10),
+  generated: "",
 });
 const discs = loadDiscMasters(games);
 if (discs) payload.discs = discs;
+payload.generated = resolveGenerated(payload, previousCatalog);
 assertRoundTrip(games, payload);
 const body = JSON.stringify(payload);
-writeFileSync(outPath, body);
+const unchanged = existsSync(outPath) && readFileSync(outPath, "utf8") === body;
+if (!unchanged) writeFileSync(outPath, body);
 const bytes = Buffer.byteLength(body);
 console.log(
-  `Wrote ${outPath} games=${games.length} ids=${seenIds.size} rows=${rows} skipped=${skipped} bytes=${bytes} gzip=${gzipSync(body).length} commit=${commit.slice(0, 12)}`,
+  `${unchanged ? "Unchanged" : "Wrote"} ${outPath} games=${games.length} ids=${seenIds.size} rows=${rows} skipped=${skipped} bytes=${bytes} gzip=${gzipSync(body).length} commit=${commit.slice(0, 12)} generated=${payload.generated}`,
 );
