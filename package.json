@@ -6,7 +6,7 @@
     "data": "node scripts/build-titles.mjs",
     "dev": "vite --host 0.0.0.0",
     "build": "node scripts/build-titles.mjs && tsc --noEmit && vite build",
-    "test": "node --experimental-strip-types --test src/search.test.ts",
+    "test": "node --experimental-strip-types --test src/search.test.ts src/tools.test.ts",
     "preview": "vite preview --host 0.0.0.0 --port 4173"
   },
   "dependencies": {
