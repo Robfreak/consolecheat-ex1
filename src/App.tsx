@@ -22,6 +22,7 @@ import {
   type Sku,
   type TitlesFile,
 } from "./search";
+import { footerTools, plusArchiveHref } from "./tools";
 
 const EXAMPLES = ["God of War", "Gran Turismo", "The Last of Us", "CUSA07820"];
 const REGION_FILTERS: Region[] = ["EU", "US", "JP", "Asia", "KR", "INT"];
@@ -357,6 +358,18 @@ export function App() {
           <p>{t.freeClaim}</p>
           <p>{t.privacyClaim}</p>
           <p>{t.footerNote}</p>
+          <nav aria-label={t.moreTools} className="mt-2 flex flex-col gap-2">
+            <p className="text-fg">{t.moreTools}</p>
+            <ul className="flex flex-wrap gap-x-4 gap-y-1">
+              {footerTools(lang).map((tool) => (
+                <li key={tool.id}>
+                  <a href={tool.href} rel="noreferrer" className="text-steel underline-offset-4 hover:underline">
+                    {tool.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </nav>
         </div>
       </footer>
     </div>
@@ -431,6 +444,16 @@ function ResultCard({
               {t.also}: {hit.game.aliases.join(", ")}
             </p>
           ) : null}
+          <p className="mt-2">
+            <a
+              href={plusArchiveHref(hit.game.name)}
+              aria-label={fill(t.plusArchiveFor, { name: hit.game.name })}
+              rel="noreferrer"
+              className="text-sm text-steel underline-offset-4 hover:underline"
+            >
+              {t.plusArchive}
+            </a>
+          </p>
         </div>
         <button
           type="button"
